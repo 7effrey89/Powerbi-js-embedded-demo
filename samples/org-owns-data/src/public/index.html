@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Power BI Embedded - Org Owns Data (JS Demo)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- CSP tuned for Power BI embed + MSAL Browser -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        img-src 'self' https://* data: blob:;
+        script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://alcdn.msauth.net;
+        style-src 'self' 'unsafe-inline';
+        connect-src 'self' https://login.microsoftonline.com https://*.login.microsoftonline.com https://api.powerbi.com https://*.analysis.windows.net https://*.powerbi.com;
+        frame-src https://app.powerbi.com https://*.powerbi.com https://*.analysis.windows.net;
+        frame-ancestors 'self' https://app.powerbi.com https://*.powerbi.com;
+      "
+    />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>Power BI Embedded - Organization Owns Data</h1>
+      <div class="meta">
+        <span id="account-label">Not signed in</span>
+        <button id="signin-button" title="Sign in">Sign in</button>
+        <button id="signout-button" title="Sign out" disabled>Sign out</button>
+        <button id="embed-button" title="Embed report" disabled>Embed</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="status">
+        <span id="token-status">Token: …</span>
+      </div>
+      <div id="reportContainer" class="report-container" role="region" aria-label="Power BI report container"></div>
+    </main>
+
+    <!-- Power BI JavaScript SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/powerbi-client@2/dist/powerbi.min.js"></script>
+    <!-- MSAL Browser (for AAD user auth) -->
+    <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+
+    <!-- App config (fill in your IDs here) -->
+    <script src="/config.js"></script>
+    <!-- MSAL config (uses values from config.js) -->
+    <script src="/authConfig.js"></script>
+    <!-- App logic -->
+    <script src="/app.js"></script>
+  </body>
+</html>
