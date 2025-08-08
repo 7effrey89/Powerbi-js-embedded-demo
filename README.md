@@ -1,1 +1,0 @@
-# Powerbi-js-embedded-demo
