@@ -10,10 +10,16 @@ This demo embeds a Power BI report for signed-in users in your organization usin
 
 This is the "Embed for your organization" scenario (also known as "User owns data"). Each viewer must sign in and have access to the report in Power BI.
 
-Picture of the embedded solution:
+## Picture of the embedded solution
+### Image 1: Signed in as a normal user from the home tenant
+This screenshot shows the embedded solution when accessed by a user whose account belongs to the same tenant that hosts the report. All features and visuals are rendered as expected.
 <img width="1716" height="1351" alt="Screenshot 2025-08-08 104433" src="https://github.com/user-attachments/assets/48da38fe-32b2-4166-885c-592ca0da0bb6" />
 
-Picture of the report from PowerBi
+### Image 2: Signed in as a B2B guest user from a different home tenant
+This screenshot illustrates the experience of a user signed in with a B2B account whose home tenant is different from the one hosting the report. The user is accessing the report as a guest in the host tenant.
+<img width="1708" height="1310" alt="image" src="https://github.com/user-attachments/assets/3d98099a-6d72-48fb-9146-9d83a53fafd8" />
+
+Picture of the original report from PowerBi services in Microsoft Fabric
 <img width="1713" height="929" alt="Screenshot 2025-08-08 104531" src="https://github.com/user-attachments/assets/ab6f2284-e11d-4863-8f33-accd77c1de1a" />
 
 ## Prerequisites
