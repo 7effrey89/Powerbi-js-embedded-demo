@@ -1,0 +1,31 @@
+{
+  "name": "powerbi-embedded-js-demo-org-owns-data",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal Power BI Embedded demo using powerbi-client with 'Embed for your organization' (user owns data) via MSAL Browser.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon --watch server.js --watch src server.js"
+  },
+  "keywords": [
+    "powerbi",
+    "embedded",
+    "javascript",
+    "express",
+    "msal",
+    "aad",
+    "demo",
+    "organization owns data",
+    "user owns data"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
