@@ -14,7 +14,6 @@
         style-src 'self' 'unsafe-inline';
         connect-src 'self' https://login.microsoftonline.com https://*.login.microsoftonline.com https://api.powerbi.com https://*.analysis.windows.net https://*.powerbi.com;
         frame-src https://app.powerbi.com https://*.powerbi.com https://*.analysis.windows.net;
-        frame-ancestors 'self' https://app.powerbi.com https://*.powerbi.com;
       "
     />
     <link rel="stylesheet" href="/style.css" />
@@ -40,7 +39,7 @@
     <!-- Power BI JavaScript SDK -->
     <script src="https://cdn.jsdelivr.net/npm/powerbi-client@2/dist/powerbi.min.js"></script>
     <!-- MSAL Browser (for AAD user auth) -->
-    <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+    <script src="https://alcdn.msauth.net/browser/2.37.0/js/msal-browser.min.js"></script>
 
     <!-- App config (fill in your IDs here) -->
     <script src="/config.js"></script>
