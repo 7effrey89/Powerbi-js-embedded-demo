@@ -3,10 +3,14 @@
   const signinBtn = document.getElementById('signin-button');
   const signoutBtn = document.getElementById('signout-button');
   const embedBtn = document.getElementById('embed-button');
+  const reportSelector = document.getElementById('report-selector');
   const tokenStatus = document.getElementById('token-status');
   const container = document.getElementById('reportContainer');
 
   const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+  // Cache for fetched reports
+  let loadedReports = [];
 
   function setActiveAccount() {
     const accounts = msalInstance.getAllAccounts();
@@ -36,16 +40,128 @@
       accountLabel.textContent = `Signed in: ${acct.username}`;
       signinBtn.disabled = true;
       signoutBtn.disabled = false;
-      embedBtn.disabled = false;
+      
+      if (typeof POWER_BI_USE_DYNAMIC_REPORT_SELECTION !== 'undefined' && POWER_BI_USE_DYNAMIC_REPORT_SELECTION) {
+        reportSelector.style.display = 'inline-block';
+        embedBtn.disabled = loadedReports.length === 0; // Disable until reports loaded
+        if (loadedReports.length === 0) {
+            // Trigger load
+            loadAvailableReports(); 
+        }
+      } else {
+        reportSelector.style.display = 'none';
+        embedBtn.disabled = false;
+        loadedReports = [];
+      }
+
     } else {
       accountLabel.textContent = 'Not signed in';
       signinBtn.disabled = false;
       signoutBtn.disabled = true;
       embedBtn.disabled = true;
+      reportSelector.style.display = 'none';
       tokenStatus.textContent = 'Token: …';
+
+      // Clear report list on signout
+      loadedReports = [];
+      reportSelector.innerHTML = '';
+
       try { powerbi.reset(container); } catch {}
     }
   }
+
+  async function loadAvailableReports() {
+     try {
+         const accessToken = await acquirePbiToken();
+         const headers = { 'Authorization': `Bearer ${accessToken}` };
+         
+         loadedReports = [];
+         embedBtn.disabled = true;
+         reportSelector.innerHTML = '<option>Loading reports...</option>';
+         
+         // 1. Get reports from "My Workspace"
+         const myReportsRes = await fetch('https://api.powerbi.com/v1.0/myorg/reports', { headers });
+         if (myReportsRes.ok) {
+            const myData = await myReportsRes.json();
+            (myData.value || []).forEach(r => {
+                r.workspaceName = "My Workspace";
+                loadedReports.push(r);
+            });
+         }
+
+         // 2. Get other workspaces
+         // Note: Requires Group.Read.All permission
+         const groupsRes = await fetch('https://api.powerbi.com/v1.0/myorg/groups', { headers });
+         if (groupsRes.ok) {
+             const groupsData = await groupsRes.json();
+             const groups = groupsData.value || [];
+             
+             // 3. Fetch reports for each group in parallel
+             const groupPromises = groups.map(async g => {
+                 try {
+                     const rRes = await fetch(`https://api.powerbi.com/v1.0/myorg/groups/${g.id}/reports`, { headers });
+                     if (rRes.ok) {
+                         const rData = await rRes.json();
+                         (rData.value || []).forEach(r => {
+                             r.workspaceName = g.name;
+                             // Store groupId if needed, though embedUrl usually handles it
+                             r.groupId = g.id; 
+                             loadedReports.push(r);
+                         });
+                     }
+                 } catch (e) {
+                     console.warn(`Failed to fetch reports for group ${g.name}`, e);
+                 }
+             });
+             
+             await Promise.all(groupPromises);
+         }
+
+         // Populate UI
+         reportSelector.innerHTML = '';
+         if (loadedReports.length === 0) {
+             const opt = document.createElement('option');
+             opt.text = "No reports found";
+             reportSelector.add(opt);
+             embedBtn.disabled = true;
+         } else {
+             // Sort by workspace name then report name
+             loadedReports.sort((a, b) => {
+                 if (a.workspaceName < b.workspaceName) return -1;
+                 if (a.workspaceName > b.workspaceName) return 1;
+                 if (a.name < b.name) return -1;
+                 if (a.name > b.name) return 1;
+                 return 0;
+             });
+
+             const defaultOpt = document.createElement('option');
+             defaultOpt.text = "Select a report...";
+             defaultOpt.value = "";
+             reportSelector.add(defaultOpt);
+
+             loadedReports.forEach(r => {
+                 const opt = document.createElement('option');
+                 opt.value = r.id;
+                 opt.text = `${r.workspaceName} - ${r.name}`;
+                 reportSelector.add(opt);
+             });
+             
+             // Enable only if selection changes
+             embedBtn.disabled = true;
+             reportSelector.onchange = () => {
+                 embedBtn.disabled = !reportSelector.value;
+             };
+         }
+
+     } catch (err) {
+         console.error(err);
+         reportSelector.innerHTML = '';
+         const opt = document.createElement('option');
+         opt.text = "Error loading reports";
+         reportSelector.add(opt);
+     }
+  }
+
 
   function formatExpiryFromJwt(token) {
     try {
@@ -96,12 +212,30 @@
 
       const models = window['powerbi-client'].models;
 
+      // Determine report ID and embed URL
+      let reportId, embedUrl;
+
+      if (typeof POWER_BI_USE_DYNAMIC_REPORT_SELECTION !== 'undefined' && POWER_BI_USE_DYNAMIC_REPORT_SELECTION && reportSelector.value) {
+          const selectedId = reportSelector.value;
+          const report = loadedReports.find(r => r.id === selectedId);
+          if (report) {
+              reportId = report.id;
+              embedUrl = report.embedUrl;
+          }
+      } 
+      
+      // Fallback or static config
+      if (!reportId) {
+        reportId = POWER_BI_REPORT_ID;
+        embedUrl = buildEmbedUrl(POWER_BI_WORKSPACE_ID, POWER_BI_REPORT_ID);
+      }
+
       const config = {
         type: 'report',
         tokenType: models.TokenType.Aad, // AAD token for Organization owns data
         accessToken,
-        embedUrl: buildEmbedUrl(POWER_BI_WORKSPACE_ID, POWER_BI_REPORT_ID),
-        id: POWER_BI_REPORT_ID,
+        embedUrl: embedUrl,
+        id: reportId,
         settings: {
           panes: {
             filters: { visible: false, expanded: false },
