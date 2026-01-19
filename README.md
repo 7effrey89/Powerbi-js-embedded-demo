@@ -53,21 +53,30 @@ Picture of the original report from PowerBi services in Microsoft Fabric
    npm install
    ```
 
-2. Create a `.env` (optional):
+2. Create a `.env` (recommended):
 
    ```bash
    cp .env.example .env
    ```
 
-   Optionally set `PORT` (defaults to `3000`).
+   Populate it with your IDs so the Express server can expose them to the SPA:
 
-3. Configure the client:
+   ```ini
+   AAD_CLIENT_ID=<entra-app-client-id>
+   AAD_TENANT_ID=<tenant-id-or-common>
+   POWER_BI_WORKSPACE_ID=<workspace-guid>
+   POWER_BI_REPORT_ID=<report-guid>
+   POWER_BI_APP_URL=https://app.powerbi.com
+   POWER_BI_USE_DYNAMIC_REPORT_SELECTION=true
+   POWER_BI_SCOPES=https://analysis.windows.net/powerbi/api/Report.Read.All,https://analysis.windows.net/powerbi/api/Group.Read.All
+   PORT=3000
+   ```
 
-   - Open `src/public/config.js` and fill in:
-     - `AAD_CLIENT_ID` with your App Registration's client ID
-     - `AAD_TENANT_ID` with your tenant ID (or `common`/`organizations`)
-     - `POWER_BI_WORKSPACE_ID` and `POWER_BI_REPORT_ID`
-     - Adjust `POWER_BI_APP_URL` if using a national cloud (e.g., GCC `https://app.powerbigov.us`)
+   These environment variables are surfaced at runtime via `/app-config.js`, so no code changes are required when you move between environments (local, Azure App Service, etc.).
+
+3. (Optional) Manual overrides:
+
+   - If you cannot use environment variables (for example, static hosting without the Node server), edit [src/public/config.js](samples/org-owns-data/src/public/config.js) directly and rebuild.
 
 4. Start the app:
 
@@ -75,6 +84,10 @@ Picture of the original report from PowerBi services in Microsoft Fabric
    npm run start
    # or:
    npm run dev
+   # or:
+   cd samples/org-owns-data
+   npm install   # first time only
+   npm run start
    ```
 
 5. Open http://localhost:3000
@@ -99,6 +112,19 @@ Picture of the original report from PowerBi services in Microsoft Fabric
    ```
 
    - Enable HTTPS-only and, optionally, Application Insights from the Azure Portal once the web app exists.
+    - Set the same IDs/scopes as App Settings so `/app-config.js` emits them to the browser (either through the Azure Portal → Configuration, or CLI):
+
+       ```bash
+       az webapp config appsettings set -g rg_powerbi_demo -n powerbi-viewer \
+          --settings \
+          AAD_CLIENT_ID=<entra-app-client-id> \
+          AAD_TENANT_ID=<tenant-id> \
+          POWER_BI_WORKSPACE_ID=<workspace-guid> \
+          POWER_BI_REPORT_ID=<report-guid> \
+          POWER_BI_APP_URL=https://app.powerbi.com \
+          POWER_BI_USE_DYNAMIC_REPORT_SELECTION=true \
+          POWER_BI_SCOPES="https://analysis.windows.net/powerbi/api/Report.Read.All,https://analysis.windows.net/powerbi/api/Group.Read.All"
+       ```
 
 3. **Create a deployment ZIP from the sample folder**
 
