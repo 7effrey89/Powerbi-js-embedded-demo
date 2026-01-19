@@ -1,0 +1,6 @@
+{
+  "properties": {
+    "linuxFxVersion": "NODE|18-lts",
+    "appCommandLine": ""
+  }
+}
