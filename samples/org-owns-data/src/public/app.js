@@ -3,14 +3,25 @@
   const signinBtn = document.getElementById('signin-button');
   const signoutBtn = document.getElementById('signout-button');
   const embedBtn = document.getElementById('embed-button');
+  const exportBtn = document.getElementById('export-pdf-button');
+  const exportStatus = document.getElementById('export-status');
   const reportSelector = document.getElementById('report-selector');
   const tokenStatus = document.getElementById('token-status');
   const container = document.getElementById('reportContainer');
 
   const msalInstance = new msal.PublicClientApplication(msalConfig);
+  const EXPORT_POLL_INTERVAL_MS = 2000;
+  const EXPORT_POLL_TIMEOUT_MS = 180000;
 
   // Cache for fetched reports
   let loadedReports = [];
+  let currentReportContext = null;
+
+  function setExportStatus(message = '', state = 'neutral') {
+    if (!exportStatus) return;
+    exportStatus.textContent = message;
+    exportStatus.dataset.state = state;
+  }
 
   function setActiveAccount() {
     const accounts = msalInstance.getAllAccounts();
@@ -54,6 +65,9 @@
         loadedReports = [];
       }
 
+      if (exportBtn) exportBtn.disabled = false;
+      if (!currentReportContext) setExportStatus('', 'neutral');
+
     } else {
       accountLabel.textContent = 'Not signed in';
       signinBtn.disabled = false;
@@ -61,10 +75,13 @@
       embedBtn.disabled = true;
       reportSelector.style.display = 'none';
       tokenStatus.textContent = 'Token: …';
+      if (exportBtn) exportBtn.disabled = true;
+      setExportStatus('', 'neutral');
 
       // Clear report list on signout
       loadedReports = [];
       reportSelector.innerHTML = '';
+      currentReportContext = null;
 
       try { powerbi.reset(container); } catch {}
     }
@@ -201,19 +218,32 @@
     return url.toString();
   }
 
+  function buildReportApiBase(workspaceId, reportId) {
+    const safeReportId = encodeURIComponent(reportId);
+    if (workspaceId) {
+      const safeGroupId = encodeURIComponent(workspaceId);
+      return `https://api.powerbi.com/v1.0/myorg/groups/${safeGroupId}/reports/${safeReportId}`;
+    }
+    return `https://api.powerbi.com/v1.0/myorg/reports/${safeReportId}`;
+  }
+
   function clearExistingEmbed() {
     try { powerbi.reset(container); } catch {}
   }
 
   async function embedReport() {
     try {
+      currentReportContext = null;
+      if (exportBtn) exportBtn.disabled = true;
+      setExportStatus('Export: preparing embed', 'info');
+
       const accessToken = await acquirePbiToken();
       tokenStatus.textContent = `Token: expires in ${formatExpiryFromJwt(accessToken)}`;
 
       const models = window['powerbi-client'].models;
 
       // Determine report ID and embed URL
-      let reportId, embedUrl;
+      let reportId, embedUrl, workspaceId = null;
 
       if (typeof POWER_BI_USE_DYNAMIC_REPORT_SELECTION !== 'undefined' && POWER_BI_USE_DYNAMIC_REPORT_SELECTION && reportSelector.value) {
           const selectedId = reportSelector.value;
@@ -221,6 +251,7 @@
           if (report) {
               reportId = report.id;
               embedUrl = report.embedUrl;
+              workspaceId = report.groupId || null;
           }
       } 
       
@@ -228,6 +259,7 @@
       if (!reportId) {
         reportId = POWER_BI_REPORT_ID;
         embedUrl = buildEmbedUrl(POWER_BI_WORKSPACE_ID, POWER_BI_REPORT_ID);
+        workspaceId = POWER_BI_WORKSPACE_ID;
       }
 
       const config = {
@@ -248,6 +280,9 @@
       clearExistingEmbed();
 
       const report = powerbi.embed(container, config);
+      currentReportContext = { reportId, workspaceId: workspaceId || null };
+      if (exportBtn) exportBtn.disabled = false;
+      setExportStatus('', 'neutral');
 
       report.on('loaded', () => console.log('Report loaded'));
       report.on('rendered', () => console.log('Report rendered'));
@@ -267,7 +302,138 @@
     } catch (e) {
       console.error('Embed failed:', e);
       alert('Failed to embed report. Check console for details.');
+      currentReportContext = null;
+      if (exportBtn) exportBtn.disabled = false;
+      setExportStatus('Export: failed to embed', 'error');
     }
+  }
+
+  async function exportReportToPdf() {
+    if (!currentReportContext) {
+      setExportStatus('Export: embed a report first', 'error');
+      alert('Embed a report before exporting.');
+      return;
+    }
+
+    try {
+      if (exportBtn) exportBtn.disabled = true;
+      setExportStatus('Export: starting…', 'info');
+
+      const accessToken = await acquirePbiToken();
+      const { reportId, workspaceId } = currentReportContext;
+      const apiBase = buildReportApiBase(workspaceId, reportId);
+
+      const startResponse = await fetch(`${apiBase}/ExportTo`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ format: 'PDF' })
+      });
+
+      const startPayloadText = await startResponse.text();
+      if (!startResponse.ok) {
+        throw new Error(`Export start failed (${startResponse.status}): ${startPayloadText || 'No details'}`);
+      }
+
+      let exportId;
+      if (startPayloadText) {
+        try {
+          exportId = JSON.parse(startPayloadText)?.id;
+        } catch (parseErr) {
+          console.warn('Unable to parse export start payload', parseErr);
+        }
+      }
+      if (!exportId) {
+        const locationHeader = startResponse.headers.get('location');
+        if (locationHeader) {
+          exportId = locationHeader.split('/').filter(Boolean).pop();
+        }
+      }
+      if (!exportId) {
+        throw new Error('Export job ID missing from response.');
+      }
+
+      const exportInfo = await pollExportStatus(accessToken, apiBase, exportId);
+      await downloadExportFile(accessToken, apiBase, exportId, exportInfo?.reportName);
+
+      setExportStatus('Export: completed', 'success');
+    } catch (err) {
+      console.error('Export to PDF failed:', err);
+      setExportStatus('Export: failed', 'error');
+      alert('Export failed. See console for details.');
+    } finally {
+      if (exportBtn) exportBtn.disabled = false;
+    }
+  }
+
+  async function pollExportStatus(accessToken, apiBase, exportId) {
+    const headers = { 'Authorization': `Bearer ${accessToken}` };
+    const statusUrl = `${apiBase}/exports/${exportId}`;
+    const start = Date.now();
+
+    while (true) {
+      if (Date.now() - start > EXPORT_POLL_TIMEOUT_MS) {
+        throw new Error('Export timed out.');
+      }
+
+      const res = await fetch(statusUrl, { headers });
+      const payloadText = await res.text();
+      if (!res.ok) {
+        throw new Error(`Export status failed (${res.status}): ${payloadText || 'No details'}`);
+      }
+
+      let payload = {};
+      if (payloadText) {
+        try {
+          payload = JSON.parse(payloadText);
+        } catch {
+          payload = {};
+        }
+      }
+
+      const state = payload.status;
+      if (state === 'Succeeded') {
+        return payload;
+      }
+      if (state === 'Failed') {
+        throw new Error(payload?.error?.message || 'Export job failed.');
+      }
+
+      const percent = typeof payload.percentComplete === 'number' ? payload.percentComplete : 0;
+      setExportStatus(`Export: running (${percent}%)`, 'info');
+      await delay(EXPORT_POLL_INTERVAL_MS);
+    }
+  }
+
+  async function downloadExportFile(accessToken, apiBase, exportId, reportName) {
+    const res = await fetch(`${apiBase}/exports/${exportId}/file`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (!res.ok) {
+      const details = await res.text();
+      throw new Error(`Export download failed (${res.status}): ${details || 'No details'}`);
+    }
+
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = `${sanitizeFileName(reportName || 'powerbi-report')}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
+  }
+
+  function sanitizeFileName(name) {
+    const cleaned = name.replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    return cleaned || 'powerbi-report';
+  }
+
+  function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   async function signIn() {
@@ -297,6 +463,9 @@
   signinBtn.addEventListener('click', signIn);
   signoutBtn.addEventListener('click', signOut);
   embedBtn.addEventListener('click', embedReport);
+  if (exportBtn) {
+    exportBtn.addEventListener('click', exportReportToPdf);
+  }
 
   // Initialize on load
   handleRedirect();

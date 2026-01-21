@@ -59,9 +59,33 @@ body {
 }
 
 .status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
   padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.15);
+  font-size: 0.9rem;
+}
+
+#export-status {
+  margin-left: auto;
+  text-align: right;
+  transition: color 0.2s ease;
+  min-height: 1em;
+}
+
+#export-status[data-state="error"] {
+  color: #ff7b7b;
+}
+
+#export-status[data-state="success"] {
+  color: #3ccf91;
+}
+
+#export-status[data-state="info"] {
+  color: var(--accent);
 }
 
 main {
